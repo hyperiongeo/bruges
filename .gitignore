@@ -1,3 +1,8 @@
+.ipynb_checkpoints 
+docs/userguide
+_version.py
+.vscode
+
 *.py[cod]
 
 .DS_Store

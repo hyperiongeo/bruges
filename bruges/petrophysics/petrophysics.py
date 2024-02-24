@@ -8,6 +8,8 @@ petrophysics.py
 :license: Apache 2.0
 """
 
+import numpy as np
+
 
 def gardner(vp, alpha=310, beta=0.25, fps=False):
     """
@@ -22,7 +24,7 @@ def gardner(vp, alpha=310, beta=0.25, fps=False):
             you own alpha, regardless of units, set this to False.
 
     Returns:
-        ndarray: RHOB estimate in kg/m^3.
+        ndarray: RHOB estimate in :math:`kg/m^3`.
     """
     alpha = 230 if fps else alpha
     return alpha * vp ** beta
@@ -59,14 +61,14 @@ def porosity_to_density(phi, rho_matrix, rho_fluid):
     """
     Get density from a porosity log. Typical values:
 
-        rho_matrix (sandstone) : 2650 kg/m^3
-        rho_matrix (limestome): 2710 kg/m^3
-        rho_matrix (dolomite): 2876 kg/m^3
-        rho_matrix (anyhydrite): 2977 kg/m^3
-        rho_matrix (salt): 20320 kg/m^3
+        - rho_matrix (sandstone) : 2650 kg/m^3
+        - rho_matrix (limestome): 2710 kg/m^3
+        - rho_matrix (dolomite): 2876 kg/m^3
+        - rho_matrix (anyhydrite): 2977 kg/m^3
+        - rho_matrix (salt): 20320 kg/m^3
 
-        rho_fluid (fresh water): 1000 kg/m^3
-        rho_fluid (salt water): 1100 kg/m^3
+        - rho_fluid (fresh water): 1000 kg/m^3
+        - rho_fluid (salt water): 1100 kg/m^3
 
     See wiki.aapg.org/Density-neutron_log_porosity.
 
@@ -85,14 +87,14 @@ def density_to_porosity(rho, rho_matrix, rho_fluid):
     """
     Get density from a porosity log. Typical values:
 
-        rho_matrix (sandstone) : 2650 kg/m^3
-        rho_matrix (limestome): 2710 kg/m^3
-        rho_matrix (dolomite): 2876 kg/m^3
-        rho_matrix (anyhydrite): 2977 kg/m^3
-        rho_matrix (salt): 20320 kg/m^3
+        - rho_matrix (sandstone) : 2650 kg/m^3
+        - rho_matrix (limestome): 2710 kg/m^3
+        - rho_matrix (dolomite): 2876 kg/m^3
+        - rho_matrix (anyhydrite): 2977 kg/m^3
+        - rho_matrix (salt): 20320 kg/m^3
 
-        rho_fluid (fresh water): 1000 kg/m^3
-        rho_fluid (salt water): 1100 kg/m^3
+        - rho_fluid (fresh water): 1000 kg/m^3
+        - rho_fluid (salt water): 1100 kg/m^3
 
     See wiki.aapg.org/Density-neutron_log_porosity.
 
@@ -123,12 +125,12 @@ def slowness_to_velocity(slowness):
 
 velocity_to_slowness = slowness_to_velocity
 
-def gardner_param(vp,rhob):
+
+def gardner_param(vp, rhob):
      """
      Finds optimal alpha and beta parameters for the gardner
 
      Volodymyr Vragov, October 2018
-
 
      Args:
          rho(ndarray): Density.
@@ -138,7 +140,7 @@ def gardner_param(vp,rhob):
          alpha (float): The factor.
          beta (float): The exponent, usually 0.25.
      """
-     params,_ = curve_fit(optimizer_gardner,rhob,vp)
+     params, _ = curve_fit(optimizer_gardner, rhob, vp)
      return params[0], params[1]
      
 
@@ -182,7 +184,6 @@ def optimize_inverse_gardner(rho, alpha, beta):
      """ Wrapper function to pass inverse_gardner to scipy.curve_fit
      to get optimal alpha and beta parameters
 
-
      Matteo Niccoli and Volodymyr Vragov, October 2018
 
      Args:
@@ -193,9 +194,28 @@ def optimize_inverse_gardner(rho, alpha, beta):
      Returns:
          inverse_gardner: this is passed to scipy.curve_fit as, for example:
          popt_synt, pcov = scipy.curve_fit(optimize_inverse_gardner, rho, vp)
-         For a ull example, please read:
+         For a full example, please read:
          mycarta.wordpress.com/2018/10/28/geophysics-python-sprint-2018-day-2-and-beyond-part-i
      """
      return inverse_gardner(rho, alpha=alpha, beta=beta)
 
 
+def archie_sw(phi, rw, rt, a=1, m=2, n=2):
+    """
+    Computes Archie water (fluid) saturation
+    Args:
+        a   (float): Cementation exponet, generally 1, 
+              can range from ~0.5 to ~4 (empirical)
+        m   (float): Cementation factor, commonly 2,
+              decreases with more clay content (empirical)
+        n   (float): Saturation exponet, commonly 2,
+              generally ranges from 1.5 to 2.5 (empirical)
+        rw  (float): Formation water (fluid) resistivity in ohmm
+        rt  (float): Formation resistivity in ohmm
+        phi (float): porosity, ranging from 0-1       
+
+    Returns:
+        ndarray: Water saturation estimation (Sw)
+    """
+    
+    return ((a*rw)/(rt*phi**m))**(1/n)

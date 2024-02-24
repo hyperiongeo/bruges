@@ -9,7 +9,7 @@ import scipy.ndimage
 import scipy.signal
 
 from bruges.bruges import BrugesError
-from bruges.filters import apply_along_axis
+from bruges.util import apply_along_axis
 from bruges.util import nearest
 from bruges.util import rms as rms_
 
@@ -237,6 +237,40 @@ def conservative(arr, size=5, supercon=False):
 
 
 def rotate_phase(s, phi, degrees=False):
+    r"""
+    Performs a phase rotation of wavelet or wavelet bank using:
+
+    .. math::
+
+        A = w(t)\cos\phi - h(t)\sin\phi
+
+    where `w(t)` is the wavelet, `h(t)` is its Hilbert transform, and \phi is
+    the phase rotation angle (default is radians).
+
+    The analytic signal can be written in the form :math:`S(t) = A(t)e^{j\theta (t)}`
+    where :math:`A(t) = \left| h(w(t)) \right|` and :math:`\theta(t) = \tan^{-1}[h(w(t))]`. 
+    `A(t)` is called the "reflection strength" and :math:`\phi(t)` is called the "instantaneous
+    phase".
+
+    A constant phase rotation :math:`\phi` would produce the analytic signal
+    :math:`S(t)=A(t)e^{j(\theta(t) + \phi)}`. To get the non-analytic signal,
+    we take 
+
+    .. math::
+
+        real(S(t)) &= A(t)\cos(\theta(t) + \phi) \\
+        &= A(t)\cos\theta(t)\cos(\phi)-\sin\theta(t)\sin(\phi))\\
+        &= w(t)\cos\phi-h(t)\sin\phi
+        
+
+    Args:
+        w (ndarray): The wavelet vector, can be a 2D wavelet bank.
+        phi (float): The phase rotation angle (in radians) to apply.
+        degrees (bool): If phi is in degrees not radians.
+
+    Returns:
+        The phase rotated signal (or bank of signals).
+    """
     # Make sure the data is at least 2D to apply_along
     data = np.atleast_2d(s)
 
@@ -247,6 +281,6 @@ def rotate_phase(s, phi, degrees=False):
     phi = np.asanyarray(phi).reshape(-1, 1, 1)
     if degrees:
         phi = np.radians(phi)
-        
+
     rotated = np.real(a) * np.cos(phi)  -  np.imag(a) * np.sin(phi)
     return np.squeeze(rotated)

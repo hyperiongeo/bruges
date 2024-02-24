@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Various reflectivity algorithms.
 
@@ -7,6 +6,7 @@ Various reflectivity algorithms.
 """
 from functools import wraps
 from collections import namedtuple
+import warnings
 
 import numpy as np
 
@@ -59,24 +59,60 @@ def reflection_phase(reflectivity):
     return ph
 
 
-def acoustic_reflectivity(vp, rho):
+def acoustic_reflectivity(vp=None, rho=None, axis=0, mode='same'):
     """
-    The acoustic reflectivity, given Vp and RHOB logs.
+    The acoustic reflectivity, given Vp and RHOB logs. You can also pass
+    either `vp` or `rho` and get velocity or density reflectivity; if you only
+    have an impedance log or dataset, pass it as `vp`.
+
+    For offset reflectivity, use `reflectivity()`.
 
     Args:
-        vp (ndarray): The P-wave velocity.
-        rho (ndarray): The bulk density.
+        vp (ndarray): The P-wave velocity. At least one of Vp and Rho is required.
+        rho (ndarray): The bulk density. At least one of Vp and Rho is required.
+            If you only have Impedance, pass it in as Vp and leave this as None.
+            It will use a value of 1 to compute impedance and you'll get velocity
+            reflectivity.
+        axis (int): The dimension along which to compute the reflectivity.
+        mode (str): 'same' means the output will be the same shape. 'valid'
+            means that only strictly valid reflectivities are computed so
+            the result will be one sample shorted in the `axis` dimension.
 
     Returns:
         ndarray: The reflectivity coefficient series.
     """
-    upper = vp[:-1] * rho[:-1]
-    lower = vp[1:] * rho[1:]
-    return (lower - upper) / (lower + upper)
+    if (vp is None) and (rho is None):
+        raise ValueError("You must pass either `vp` or `rho`.")
+    elif vp is None:
+        vp = np.ones_like(rho)
+    elif rho is None:
+        rho = np.ones_like(vp)
 
-def reflectivity(vp, vs, rho, theta=0, method='zoeppritz_rpp'):
+    if axis < 0:
+        axis = vp.ndim + axis
+
+    if axis > 0:
+        imp = np.moveaxis(vp * rho, axis, 0)
+    else:
+        imp = vp * rho
+
+    if mode == 'same':
+        pad_width = [(0, 1)] + (imp.ndim - 1) * [(0, 0)]
+        imp = np.pad(imp, pad_width=pad_width, mode='edge')
+
+    rc = (imp[1:] - imp[:-1]) / (imp[1:] + imp[:-1])
+
+    if axis > 0:
+        return np.moveaxis(rc, 0, axis)
+    else:
+        return rc
+
+
+def reflectivity(vp, vs, rho, theta=0, method='zoeppritz_rpp', axis=0, mode='same'):
     """
     Offset reflectivity, given Vp, Vs, rho, and offset.
+
+    For acoustic reflectivity, use `acoustic_reflectivity()`.
 
     Computes 'upper' and 'lower' intervals from the three provided arrays,
     then passes the result to the specified method to compute reflection
@@ -96,25 +132,31 @@ def reflectivity(vp, vs, rho, theta=0, method='zoeppritz_rpp'):
         vs (ndarray): The S-wave velocity; float or 1D array length m.
         rho (ndarray): The density; float or 1D array length m.
         theta (ndarray): The incidence angle; float or 1D array length n.
+        axis (int): The dimension along which to compute the reflectivity.
+        mode (str): 'same' means the output will be the same shape. 'valid'
+            means that only strictly valid reflectivities are computed so
+            the result will be one sample shorted in the `axis` dimension.
         method (str): The reflectivity equation to use; one of:
 
-                - 'scattering_matrix': scattering_matrix
-                - 'zoeppritz_element': zoeppritz_element
-                - 'zoeppritz': zoeppritz
-                - 'zoeppritz_rpp': zoeppritz_rpp
-                - 'akirichards': akirichards
-                - 'akirichards_alt': akirichards_alt
-                - 'fatti': fatti
-                - 'shuey': shuey
-                - 'bortfeld': bortfeld
-                - 'hilterman': hilterman
+            - 'scattering_matrix': scattering_matrix
+            - 'zoeppritz_element': zoeppritz_element
+            - 'zoeppritz': zoeppritz
+            - 'zoeppritz_rpp': zoeppritz_rpp
+            - 'akirichards': akirichards
+            - 'akirichards_alt': akirichards_alt
+            - 'fatti': fatti
+            - 'shuey': shuey
+            - 'bortfeld': bortfeld
+            - 'hilterman': hilterman
 
         Notes:
 
-                - scattering_matrix gives the full solution
-                - zoeppritz_element gives a single element which you specify
-                - zoeppritz returns RPP element only; use zoeppritz_rpp instead
-                - zoeppritz_rpp is faster than zoeppritz or zoeppritz_element
+            - scattering_matrix gives the full solution
+            - zoeppritz_element gives a single element which you specify
+            - zoeppritz returns RPP element only; use zoeppritz_rpp instead
+            - zoeppritz_rpp is faster than zoeppritz or zoeppritz_element
+            - You can also pass a function with the same API as these built-in
+                functions.
 
     Returns:
         ndarray. The result of running the specified method on the inputs.
@@ -135,16 +177,30 @@ def reflectivity(vp, vs, rho, theta=0, method='zoeppritz_rpp'):
         'bortfeld': bortfeld,
         'hilterman': hilterman,
     }
-    func = methods[method.lower()]
-    vp = np.asanyarray(vp, dtype=float)
-    vs = np.asanyarray(vs, dtype=float)
-    rho = np.asanyarray(rho, dtype=float)
+    func = methods.get(method.casefold(), method)
+    
+    if axis < 0:
+        axis = vp.ndim + axis
 
-    vp1, vp2 = vp[:-1], vp[1:]
-    vs1, vs2 = vs[:-1], vs[1:]
-    rho1, rho2 = rho[:-1], rho[1:]
+    if axis > 0:
+        vp_  = np.moveaxis(np.asanyarray(vp, dtype=float), axis, 0)
+        vs_  = np.moveaxis(np.asanyarray(vs, dtype=float), axis, 0)
+        rho_ = np.moveaxis(np.asanyarray(rho, dtype=float), axis, 0)
+    else:
+        vp_, vs_, rho_ = vp, vs, rho
 
-    return func(vp1, vs1, rho1, vp2, vs2, rho2, theta)
+    if mode == 'same':
+        pad_width = [(0, 1)] + (vp.ndim - 1) * [(0, 0)]
+        vp_ = np.pad(vp_, pad_width=pad_width, mode='edge')
+        vs_ = np.pad(vs_, pad_width=pad_width, mode='edge')
+        rho_ = np.pad(rho_, pad_width=pad_width, mode='edge')
+
+    rc = func(vp_[:-1], vs_[:-1], rho_[:-1], vp_[1:], vs_[1:], rho_[1:], theta)
+
+    if axis > 0:
+        return np.moveaxis(rc, 0, axis)
+    else:
+        return np.squeeze(rc)
 
 
 def vectorize(func):
@@ -158,13 +214,19 @@ def vectorize(func):
     """
     @wraps(func)
     def wrapper(vp1, vs1, rho1, vp2, vs2, rho2, theta1=0, **kwargs):
+
         vp1 = np.asanyarray(vp1, dtype=float)
         vs1 = np.asanyarray(vs1, dtype=float) + 1e-12  # Prevent singular matrix.
         rho1 = np.asanyarray(rho1, dtype=float)
         vp2 = np.asanyarray(vp2, dtype=float)
         vs2 = np.asanyarray(vs2, dtype=float) + 1e-12  # Prevent singular matrix.
         rho2 = np.asanyarray(rho2, dtype=float)
-        theta1 = np.asanyarray(theta1).reshape((-1, 1))
+
+        new_shape = [-1] + vp1.ndim * [1]
+        theta1 = theta1.reshape(*new_shape)
+        if (np.nan_to_num(theta1) > np.pi/2.).any():
+            raise ValueError("Incidence angle theta1 must be less than 90 deg.")
+
         return func(vp1, vs1, rho1, vp2, vs2, rho2, theta1, **kwargs)
     return wrapper
 
